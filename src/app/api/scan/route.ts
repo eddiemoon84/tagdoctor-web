@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
-/* eslint-disable @typescript-eslint/no-require-imports */
 import { supabase } from '@/lib/supabase';
 import { PRESCRIPTIONS } from '@/lib/constants';
 import { validateScanUrl } from '@/lib/url-validator';
 
 export const dynamic = 'force-dynamic';
+
+const SCAN_API_URL = process.env.SCAN_API_URL || 'http://localhost:3001';
 
 // ─── 동시 스캔 제한 ──────────────────────────────────────────────────────────
 const MAX_CONCURRENT_SCANS = 3;
@@ -95,11 +96,24 @@ async function executeScan(scanId: string, url: string) {
   await supabase.from('scan_results').update({ status: 'scanning' }).eq('id', scanId);
 
   try {
-    const scanResult = await runScanEngine(url);
+    // 스캔 서버에 HTTP 요청
+    const response = await fetch(`${SCAN_API_URL}/api/scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+      signal: AbortSignal.timeout(90000),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => ({}));
+      throw new Error(errBody.error || `Scan server returned ${response.status}`);
+    }
+
+    const scanResult: ScanResult = await response.json();
 
     // summary: { meta_pixel: "ok", ga4: "duplicate", ... }
     const summary: Record<string, string> = {};
-    const tags = scanResult.tags as Record<string, ScanTag>;
+    const tags = scanResult.tags;
     for (const [key, tag] of Object.entries(tags)) {
       summary[key] = tag.status;
     }
@@ -167,47 +181,4 @@ async function executeScan(scanId: string, url: string) {
       error_message: '스캔 중 오류가 발생했습니다',
     }).eq('id', scanId);
   }
-}
-
-// ─── scan.mjs 실행 ───────────────────────────────────────────────────────────
-
-function runScanEngine(url: string): Promise<ScanResult> {
-  // Turbopack 정적 분석 우회 — Node.js 빌트인 모듈은 런타임에만 로드
-  const r = eval('require') as NodeRequire;
-  const { execFile } = r('child_process') as typeof import('child_process');
-  const { readFileSync, unlinkSync } = r('fs') as typeof import('fs');
-  const { join } = r('path') as typeof import('path');
-
-  return new Promise((resolve, reject) => {
-    const scanDir = process.env.SCAN_ENGINE_PATH;
-    if (!scanDir) {
-      reject(new Error('SCAN_ENGINE_PATH not configured'));
-      return;
-    }
-
-    execFile('node', [join(scanDir, 'scan.mjs'), url], {
-      timeout: 60000,
-      cwd: scanDir,
-    }, (error, stdout) => {
-      if (error) {
-        reject(new Error(`Scan failed: ${error.message}`));
-        return;
-      }
-
-      const match = stdout.match(/리포트 저장됨: (.+\.json)/);
-      if (!match) {
-        reject(new Error('Report file not found in scan output'));
-        return;
-      }
-
-      const reportPath = join(scanDir, match[1].trim());
-      try {
-        const data = JSON.parse(readFileSync(reportPath, 'utf-8'));
-        unlinkSync(reportPath);
-        resolve(data);
-      } catch (e) {
-        reject(e);
-      }
-    });
-  });
 }
