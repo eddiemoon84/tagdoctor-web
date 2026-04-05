@@ -36,6 +36,7 @@ CREATE TABLE tracker_diagnoses (
 CREATE TABLE subscribers (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   email TEXT NOT NULL UNIQUE,
+  site_url TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

@@ -245,8 +245,11 @@ function ReportView({ data }: { data: ScanData }) {
           </button>
         </div>
 
+        {/* 이메일 구독 */}
+        <SubscribeForm siteUrl={data.url} />
+
         {/* 베타 피드백 */}
-        <div className="mt-10 bg-gray-50 rounded-xl p-6 text-center">
+        <div className="mt-6 bg-gray-50 rounded-xl p-6 text-center">
           <p className="text-sm font-medium text-gray-600">
             TagDoctor는 현재 베타 서비스입니다.
           </p>
@@ -330,6 +333,81 @@ function TrackerCard({ diagnosis }: { diagnosis: TrackerDiagnosis }) {
             </div>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ─── 이메일 구독 폼 ──────────────────────────────────────────────────────────
+
+function SubscribeForm({ siteUrl }: { siteUrl: string }) {
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState<"idle" | "loading" | "success" | "duplicate" | "error">("idle");
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim()) return;
+
+    setStatus("loading");
+    try {
+      const res = await fetch("/api/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), site_url: siteUrl }),
+      });
+
+      if (res.ok) {
+        setStatus("success");
+      } else if (res.status === 409) {
+        setStatus("duplicate");
+      } else {
+        setStatus("error");
+      }
+    } catch {
+      setStatus("error");
+    }
+  };
+
+  if (status === "success") {
+    return (
+      <div className="mt-10 bg-blue-50 rounded-xl p-6 text-center">
+        <p className="text-sm font-medium text-blue-700">
+          신청 완료! 변화가 감지되면 알려드리겠습니다
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-10 bg-blue-50 rounded-xl p-6 text-center">
+      <p className="text-sm font-semibold text-gray-800">
+        정기 모니터링 알림 받기
+      </p>
+      <p className="mt-1 text-sm text-gray-500">
+        사이트 트래킹 상태에 변화가 생기면 이메일로 알려드립니다
+      </p>
+      <form onSubmit={handleSubmit} className="mt-4 flex flex-col sm:flex-row gap-2 max-w-md mx-auto">
+        <input
+          type="email"
+          placeholder="이메일 주소"
+          value={email}
+          onChange={(e) => { setEmail(e.target.value); setStatus("idle"); }}
+          className="flex-1 h-10 px-3 rounded-lg border border-gray-300 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          required
+        />
+        <button
+          type="submit"
+          disabled={status === "loading"}
+          className="h-10 px-5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {status === "loading" ? "신청 중..." : "알림 신청"}
+        </button>
+      </form>
+      {status === "duplicate" && (
+        <p className="mt-2 text-xs text-amber-600">이미 신청된 이메일입니다</p>
+      )}
+      {status === "error" && (
+        <p className="mt-2 text-xs text-red-500">신청에 실패했습니다. 다시 시도해주세요</p>
       )}
     </div>
   );
