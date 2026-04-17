@@ -16,7 +16,7 @@ export async function GET(
 
   const { data: scan, error } = await supabase
     .from('scan_results')
-    .select('id, url, status, score, total_trackers, installed_trackers, summary, raw_result, error_message, scanned_at, created_at')
+    .select('id, url, status, score, total_trackers, installed_trackers, summary, raw_result, error_message, scanned_at, created_at, hosting_id, hosting_name')
     .eq('id', id)
     .single();
 

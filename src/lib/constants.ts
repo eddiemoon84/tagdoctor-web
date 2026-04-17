@@ -86,3 +86,140 @@ export const TRACKER_EMOJI: Record<string, string> = {
   criteo: '🟠',
   dable: '📰',
 };
+
+// ─── 호스팅 배지 스타일 ───────────────────────────────────────────────────
+
+export const HOSTING_BADGE: Record<string, { label: string; bg: string; color: string }> = {
+  cafe24: { label: '🏠 카페24', bg: 'bg-blue-100', color: 'text-blue-700' },
+  imweb: { label: '🏠 아임웹', bg: 'bg-purple-100', color: 'text-purple-700' },
+  godo: { label: '🏠 고도몰', bg: 'bg-green-100', color: 'text-green-700' },
+  makeshop: { label: '🏠 메이크샵', bg: 'bg-orange-100', color: 'text-orange-700' },
+  wordpress: { label: '🏠 WordPress', bg: 'bg-indigo-100', color: 'text-indigo-700' },
+  general: { label: '🏠 일반', bg: 'bg-gray-100', color: 'text-gray-700' },
+};
+
+export const HOSTING_LABEL: Record<string, string> = {
+  cafe24: '카페24',
+  imweb: '아임웹',
+  godo: '고도몰',
+  makeshop: '메이크샵',
+  wordpress: 'WordPress',
+  general: '일반',
+  gtm: 'GTM',
+  manual: '직접 코드 삽입',
+};
+
+// ─── 호스팅별 구조화 처방 (주요 매체 × not_installed) ───────────────────────
+
+export interface HostingPrescription {
+  title: string;
+  severity: 'error' | 'warning';
+  why: string;
+  solutions: Partial<Record<'cafe24' | 'imweb' | 'godo' | 'makeshop' | 'wordpress' | 'gtm' | 'manual', string>>;
+}
+
+export const HOSTING_PRESCRIPTIONS: Record<string, HostingPrescription> = {
+  meta_pixel: {
+    title: 'Meta Pixel이 설치되지 않았습니다',
+    severity: 'error',
+    why: '메타(Facebook/Instagram) 광고의 전환 성과를 측정하려면 픽셀 설치가 필수입니다. 픽셀이 없으면 광고비 효율을 전혀 측정할 수 없습니다.',
+    solutions: {
+      cafe24:
+        '1. [쇼핑몰 관리자] → [마케팅 센터] → [Facebook 채널] 접속\n2. Meta 비즈니스 계정 연결 후 픽셀 ID 입력\n3. 저장 → 실시간 이벤트 관리자에서 PageView 확인',
+      imweb:
+        '1. [마케팅] → [외부 서비스 연동] → [Facebook 픽셀] 메뉴\n2. Meta 비즈니스에서 발급받은 픽셀 ID 입력 후 저장',
+      godo:
+        '1. [마케팅] → [외부 스크립트 관리] → Head 영역 선택\n2. Meta 이벤트 관리자에서 복사한 픽셀 코드 전체를 붙여넣기\n3. 저장 후 Meta Pixel Helper로 확인',
+      makeshop:
+        '1. [관리자] → [쇼핑몰 기본 설정] → [외부 스크립트] 접속\n2. Head 영역에 Meta 픽셀 코드 삽입',
+      wordpress:
+        '1. 플러그인 스토어에서 "PixelYourSite" 또는 "Facebook for WooCommerce" 설치\n2. 플러그인 설정에서 픽셀 ID 입력\n또는 [외관] → [테마 파일 편집기] → header.php에 코드 직접 삽입',
+      gtm:
+        '1. GTM → [태그] → [새로 만들기] → [커뮤니티 템플릿] → "Meta Pixel" 검색\n2. 픽셀 ID 입력 + 트리거: All Pages\n3. 제출 후 Preview 모드에서 확인',
+      manual:
+        '1. Meta 이벤트 관리자 → [데이터 소스] → 픽셀 선택 → [설정] → [코드 직접 설치]\n2. 복사한 스크립트를 사이트의 <head> 태그 바로 뒤에 붙여넣기',
+    },
+  },
+  ga4: {
+    title: 'Google Analytics 4가 설치되지 않았습니다',
+    severity: 'warning',
+    why: 'GA4 없이는 방문자 행동, 전환, 트래픽 소스를 분석할 수 없습니다. 광고 성과 및 사용자 흐름 파악에 필수입니다.',
+    solutions: {
+      cafe24:
+        '1. analytics.google.com에서 속성 생성 → 측정 ID(G-XXXXXXXXX) 발급\n2. [쇼핑몰 관리자] → [기본 설정] → [검색 엔진 최적화(SEO)]\n3. "Google 애널리틱스 ID" 필드에 G- 로 시작하는 ID 입력 후 저장',
+      imweb:
+        '1. analytics.google.com에서 측정 ID 발급\n2. [마케팅] → [외부 서비스 연동] → [Google Analytics]\n3. 측정 ID 입력 후 저장',
+      godo:
+        '1. [마케팅] → [외부 스크립트 관리] → Head 영역\n2. GA4 기본 태그(gtag.js) 스크립트 전체를 붙여넣기',
+      makeshop:
+        '1. [관리자] → [쇼핑몰 기본 설정] → [외부 스크립트]\n2. Head 영역에 GA4 gtag.js 코드 삽입',
+      wordpress:
+        '1. "Site Kit by Google" 플러그인 설치 (공식)\n2. 설정 마법사로 Google 계정 연결 후 GA4 속성 선택\n또는 "Insert Headers and Footers" 플러그인으로 gtag.js 직접 삽입',
+      gtm:
+        '1. GTM → [태그] → [새로 만들기] → [Google 태그] 선택\n2. 태그 ID에 측정 ID(G-XXXXXXXXX) 입력\n3. 트리거: All Pages → 제출',
+      manual:
+        '1. analytics.google.com → [관리] → [데이터 스트림] → 웹 → 스트림 선택\n2. "구현 지침"에서 gtag.js 스니펫 복사\n3. 사이트의 <head> 태그 안에 붙여넣기',
+    },
+  },
+  gtm: {
+    title: 'Google Tag Manager가 설치되지 않았습니다',
+    severity: 'warning',
+    why: 'GTM을 쓰면 GA4/메타 픽셀/네이버/카카오 등 모든 태그를 코드 수정 없이 한 곳에서 관리할 수 있습니다. 태그가 많을수록 GTM이 필수입니다.',
+    solutions: {
+      cafe24:
+        '1. tagmanager.google.com에서 컨테이너 생성 → GTM ID(GTM-XXXXXXX) 발급\n2. [쇼핑몰 관리자] → [기본 설정] → [검색 엔진 최적화(SEO)]\n3. "Google Tag Manager ID" 필드에 GTM- 로 시작하는 ID 입력',
+      imweb:
+        '1. tagmanager.google.com에서 컨테이너 생성\n2. [마케팅] → [외부 서비스 연동] → [Google Tag Manager]\n3. GTM ID 입력',
+      godo:
+        '1. [마케팅] → [외부 스크립트 관리]\n2. GTM에서 발급받은 <head>용 스크립트와 <body>용 noscript 태그를 각각 해당 위치에 삽입',
+      makeshop:
+        '1. [관리자] → [쇼핑몰 기본 설정] → [외부 스크립트]\n2. GTM head 스크립트 + body noscript 삽입',
+      wordpress:
+        '1. "GTM4WP" 플러그인 설치 → GTM ID 입력\n또는 [외관] → 테마 편집 → header.php에 GTM 스크립트 직접 삽입',
+      manual:
+        '1. tagmanager.google.com → 컨테이너 생성 후 설치 안내 코드 2개 복사\n2. 첫 번째 코드는 <head> 바로 뒤, 두 번째 코드(noscript)는 <body> 바로 뒤에 삽입',
+    },
+  },
+  naver: {
+    title: '네이버 전환추적 공통태그가 설치되지 않았습니다',
+    severity: 'error',
+    why: '네이버 검색광고의 전환 성과를 측정하려면 공통태그(wcslog.js) 설치가 필수입니다. 공통태그 없이는 키워드별 전환율을 알 수 없습니다.',
+    solutions: {
+      cafe24:
+        '1. searchad.naver.com 로그인 → [도구] → [전환추적 관리] → 공통태그 발급\n2. [쇼핑몰 관리자] → [기본 설정] → [검색 엔진 최적화(SEO)]\n3. 네이버 공통태그 ID 입력 후 저장',
+      imweb:
+        '1. 네이버 검색광고에서 공통태그 발급\n2. [마케팅] → [외부 서비스 연동] → [네이버 공통태그]\n3. 공통태그 ID 입력',
+      godo:
+        '1. [마케팅] → [외부 스크립트 관리] → Head 영역\n2. 네이버에서 발급받은 공통태그 스크립트 전체를 붙여넣기',
+      makeshop:
+        '1. [관리자] → [쇼핑몰 기본 설정] → [외부 스크립트]\n2. Head 영역에 네이버 공통태그 스크립트 삽입',
+      wordpress:
+        '1. "Insert Headers and Footers" 플러그인 설치\n2. Scripts in Header 영역에 wcslog.js 스크립트 삽입',
+      gtm:
+        '1. GTM → [태그] → [새로 만들기] → [커스텀 HTML]\n2. 네이버 공통태그 스크립트 붙여넣기\n3. 트리거: All Pages → 제출',
+      manual:
+        '1. 네이버 검색광고 → [도구] → [전환추적 관리] → 공통태그 발급\n2. 사이트의 모든 페이지 <head>에 스크립트 삽입 (공통 레이아웃 수정)',
+    },
+  },
+  kakao: {
+    title: '카카오 픽셀이 설치되지 않았습니다',
+    severity: 'warning',
+    why: '카카오모먼트(카카오 키워드/디스플레이) 광고의 전환 추적을 위해 카카오 픽셀이 필요합니다. 카카오 SDK(로그인/공유)와는 별개 제품입니다.',
+    solutions: {
+      cafe24:
+        '1. business.kakao.com → [광고 계정] → [도구] → [픽셀 & SDK] → 픽셀 생성\n2. [쇼핑몰 관리자] → [마케팅 센터] 또는 [외부 스크립트]에서 Head 영역에 픽셀 코드 삽입',
+      imweb:
+        '1. 카카오 비즈니스에서 픽셀 생성 후 코드 복사\n2. [마케팅] → [외부 서비스 연동] → 커스텀 스크립트에 붙여넣기',
+      godo:
+        '1. [마케팅] → [외부 스크립트 관리] → Head 영역\n2. 카카오 픽셀 SDK 코드 전체 붙여넣기',
+      makeshop:
+        '1. [관리자] → [쇼핑몰 기본 설정] → [외부 스크립트]\n2. Head 영역에 카카오 픽셀 코드 삽입',
+      wordpress:
+        '1. "Insert Headers and Footers" 플러그인으로 <head>에 카카오 픽셀 SDK 코드 삽입',
+      gtm:
+        '1. GTM → [태그] → [새로 만들기] → [커스텀 HTML]\n2. 카카오 픽셀 코드 붙여넣기\n3. 트리거: All Pages',
+      manual:
+        '1. business.kakao.com → 픽셀 & SDK에서 픽셀 코드 복사\n2. 사이트 <head> 태그 안에 붙여넣기 후 kakaoPixel().pageView() 호출 추가',
+    },
+  },
+};

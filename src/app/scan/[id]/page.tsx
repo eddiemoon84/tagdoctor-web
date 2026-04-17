@@ -2,7 +2,14 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { STATUS_CONFIG, TRACKER_EMOJI } from "@/lib/constants";
+import {
+  STATUS_CONFIG,
+  TRACKER_EMOJI,
+  HOSTING_BADGE,
+  HOSTING_LABEL,
+  HOSTING_PRESCRIPTIONS,
+  type HostingPrescription,
+} from "@/lib/constants";
 
 interface TrackerDiagnosis {
   tracker_key: string;
@@ -63,7 +70,21 @@ interface ScanData {
   scanned_at: string;
   tracker_diagnoses: TrackerDiagnosis[];
   is_multi?: boolean;
-  raw_result?: MultiRawResult | Record<string, unknown>;
+  raw_result?: (MultiRawResult | Record<string, unknown>) & {
+    hosting?: { id: string; name: string };
+  };
+  hosting_id?: string | null;
+  hosting_name?: string | null;
+}
+
+function getHostingId(data: ScanData): string {
+  if (data.hosting_id) return data.hosting_id;
+  const raw = data.raw_result;
+  if (raw && typeof raw === "object" && "hosting" in raw) {
+    const h = (raw as { hosting?: { id?: string } }).hosting;
+    if (h?.id) return h.id;
+  }
+  return "general";
 }
 
 export default function ScanPage() {
@@ -214,6 +235,8 @@ function ReportView({ data }: { data: ScanData }) {
   const issues = data.tracker_diagnoses.filter(
     (d) => d.status === "duplicate" || d.status === "no_event"
   );
+  const hostingId = getHostingId(data);
+  const badge = HOSTING_BADGE[hostingId] || HOSTING_BADGE.general;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -259,7 +282,13 @@ function ReportView({ data }: { data: ScanData }) {
             </div>
           </div>
 
-          <div className="mt-4 flex justify-center gap-6 text-sm">
+          <div className="mt-4 flex justify-center items-center gap-3 flex-wrap">
+            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-medium rounded-full ${badge.bg} ${badge.color}`}>
+              {badge.label}
+            </span>
+          </div>
+
+          <div className="mt-3 flex justify-center gap-6 text-sm">
             <span className="text-gray-600">
               감지 <strong className="text-gray-900">{data.installed_trackers}</strong>/{data.total_trackers}
             </span>
@@ -274,7 +303,7 @@ function ReportView({ data }: { data: ScanData }) {
         {/* Tracker Cards */}
         <div className="mt-6 space-y-3">
           {data.tracker_diagnoses.map((d) => (
-            <TrackerCard key={d.tracker_key} diagnosis={d} />
+            <TrackerCard key={d.tracker_key} diagnosis={d} hostingId={hostingId} />
           ))}
         </div>
 
@@ -320,10 +349,15 @@ function ReportView({ data }: { data: ScanData }) {
 
 // ─── 트래커 카드 ────────────────────────────────────────────────────────────────
 
-function TrackerCard({ diagnosis }: { diagnosis: TrackerDiagnosis }) {
+function TrackerCard({ diagnosis, hostingId }: { diagnosis: TrackerDiagnosis; hostingId: string }) {
   const [open, setOpen] = useState(diagnosis.prescription !== null);
   const config = STATUS_CONFIG[diagnosis.status];
   const emoji = TRACKER_EMOJI[diagnosis.tracker_key] || "📋";
+
+  // 구조화 처방 사용 가능 여부 (주요 매체 × not_installed)
+  const structured = diagnosis.status === "not_installed"
+    ? HOSTING_PRESCRIPTIONS[diagnosis.tracker_key]
+    : undefined;
 
   return (
     <div className={`bg-white rounded-xl p-5 ${diagnosis.prescription ? "ring-1 ring-amber-200" : ""}`}>
@@ -362,7 +396,9 @@ function TrackerCard({ diagnosis }: { diagnosis: TrackerDiagnosis }) {
       </div>
 
       {/* Prescription */}
-      {diagnosis.prescription && (
+      {structured ? (
+        <HostingPrescriptionView structured={structured} hostingId={hostingId} />
+      ) : diagnosis.prescription && (
         <div className="mt-3">
           <button
             onClick={() => setOpen(!open)}
@@ -373,6 +409,83 @@ function TrackerCard({ diagnosis }: { diagnosis: TrackerDiagnosis }) {
           {open && (
             <div className="mt-2 p-3 bg-blue-50 rounded-lg text-sm text-gray-700 leading-relaxed whitespace-pre-line">
               💡 {diagnosis.prescription}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── 호스팅 분기 처방 ─────────────────────────────────────────────────────
+
+function HostingPrescriptionView({
+  structured,
+  hostingId,
+}: {
+  structured: HostingPrescription;
+  hostingId: string;
+}) {
+  const [expandedOther, setExpandedOther] = useState(false);
+  const solutions = structured.solutions;
+
+  const detectedKey = (hostingId in solutions ? hostingId : null) as
+    | keyof typeof solutions
+    | null;
+  const detectedSolution = detectedKey ? solutions[detectedKey] : undefined;
+  const hostingLabel = HOSTING_LABEL[hostingId] || HOSTING_LABEL.general;
+
+  const otherEntries = (Object.entries(solutions) as [keyof typeof solutions, string][])
+    .filter(([key]) => key !== detectedKey);
+
+  const severityColor = structured.severity === "error" ? "bg-red-50 ring-red-200" : "bg-amber-50 ring-amber-200";
+
+  return (
+    <div className={`mt-3 p-4 rounded-lg ring-1 ${severityColor}`}>
+      <p className="text-sm font-semibold text-gray-900">
+        💡 {structured.title}
+      </p>
+      <p className="mt-1 text-xs text-gray-600 leading-relaxed">
+        {structured.why}
+      </p>
+
+      {detectedSolution && (
+        <div className="mt-3 bg-white rounded-lg p-3 ring-1 ring-blue-200">
+          <p className="text-xs font-semibold text-blue-700">
+            📍 감지된 호스팅: {hostingLabel} <span className="text-gray-500">(권장)</span>
+          </p>
+          <p className="mt-2 text-sm text-gray-800 leading-relaxed whitespace-pre-line">
+            {detectedSolution}
+          </p>
+        </div>
+      )}
+
+      {!detectedSolution && (
+        <p className="mt-3 text-xs text-gray-500">
+          감지된 호스팅({hostingLabel})에 대한 맞춤 가이드는 아직 준비 중입니다. 아래 방법 중 상황에 맞는 것을 선택하세요.
+        </p>
+      )}
+
+      {otherEntries.length > 0 && (
+        <div className="mt-3">
+          <button
+            onClick={() => setExpandedOther(!expandedOther)}
+            className="text-xs text-blue-600 hover:text-blue-800 cursor-pointer"
+          >
+            {expandedOther ? "다른 방법 접기 ▲" : "다른 방법으로 설치하기 ▼"}
+          </button>
+          {expandedOther && (
+            <div className="mt-2 space-y-2">
+              {otherEntries.map(([key, text]) => (
+                <div key={key} className="bg-white rounded-lg p-3">
+                  <p className="text-xs font-semibold text-gray-700">
+                    {HOSTING_LABEL[key] || key}
+                  </p>
+                  <p className="mt-1 text-sm text-gray-700 leading-relaxed whitespace-pre-line">
+                    {text}
+                  </p>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -440,10 +553,20 @@ function MultiReportView({ data, raw }: { data: ScanData; raw: MultiRawResult })
             </div>
           </div>
 
-          <div className="mt-4 flex justify-center gap-6 text-sm text-gray-600">
-            <span>🏠 호스팅: <strong className="text-gray-900">{raw.hosting?.name || "일반"}</strong></span>
-            <span>📄 진단 페이지: <strong className="text-gray-900">{pages.length}</strong>개</span>
-          </div>
+          {(() => {
+            const hId = getHostingId(data);
+            const b = HOSTING_BADGE[hId] || HOSTING_BADGE.general;
+            return (
+              <div className="mt-4 flex justify-center items-center gap-3 flex-wrap">
+                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 text-xs font-medium rounded-full ${b.bg} ${b.color}`}>
+                  {b.label}
+                </span>
+                <span className="text-xs text-gray-600">
+                  📄 진단 페이지: <strong className="text-gray-900">{pages.length}</strong>개
+                </span>
+              </div>
+            );
+          })()}
         </div>
 
         {/* 페이지별 카드 */}

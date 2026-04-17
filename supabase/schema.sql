@@ -15,6 +15,8 @@ CREATE TABLE scan_results (
   error_message TEXT,
   page_count INTEGER DEFAULT 1,
   is_multi BOOLEAN DEFAULT FALSE,
+  hosting_id TEXT DEFAULT 'general',
+  hosting_name TEXT DEFAULT '일반',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

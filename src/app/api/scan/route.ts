@@ -199,7 +199,9 @@ async function executeScan(scanId: string, url: string) {
       summary[key] = tag.status;
     }
 
-    await supabase.from('scan_results').update({
+    const hosting = scanResult.hosting || { id: 'general', name: '일반' };
+
+    await updateScanResult(scanId, {
       status: 'completed',
       score: scanResult.score,
       total_trackers: scanResult.summary.totalTags,
@@ -207,7 +209,7 @@ async function executeScan(scanId: string, url: string) {
       summary,
       raw_result: scanResult,
       scanned_at: scanResult.scannedAt,
-    }).eq('id', scanId);
+    }, hosting);
 
     // tracker_diagnoses 삽입
     const diagnoses = [];
@@ -305,7 +307,9 @@ async function executeMultiScan(scanId: string, pages: { url: string; type: stri
       }
     }
 
-    await supabase.from('scan_results').update({
+    const hosting = result.hosting || { id: 'general', name: '일반' };
+
+    await updateScanResult(scanId, {
       status: 'completed',
       score: result.overallScore,
       total_trackers: totalTags,
@@ -313,7 +317,7 @@ async function executeMultiScan(scanId: string, pages: { url: string; type: stri
       summary,
       raw_result: result,
       scanned_at: result.scannedAt,
-    }).eq('id', scanId);
+    }, hosting);
 
   } catch (err) {
     const internal = err instanceof Error ? err.message : String(err);
@@ -322,5 +326,24 @@ async function executeMultiScan(scanId: string, pages: { url: string; type: stri
       status: 'failed',
       error_message: '스캔 중 오류가 발생했습니다',
     }).eq('id', scanId);
+  }
+}
+
+// ─── DB update 헬퍼 ────────────────────────────────────────────────────────
+// hosting_id, hosting_name 컬럼이 DB에 아직 없을 때도 안전하게 동작
+
+async function updateScanResult(
+  scanId: string,
+  base: Record<string, unknown>,
+  hosting: { id: string; name: string },
+) {
+  const withHosting = { ...base, hosting_id: hosting.id, hosting_name: hosting.name };
+  const { error } = await supabase.from('scan_results').update(withHosting).eq('id', scanId);
+
+  if (error && /column.*hosting_(id|name)/.test(error.message)) {
+    console.warn('hosting columns missing — falling back to base update');
+    await supabase.from('scan_results').update(base).eq('id', scanId);
+  } else if (error) {
+    throw new Error(`DB update failed: ${error.message}`);
   }
 }
