@@ -307,6 +307,9 @@ function ReportView({ data }: { data: ScanData }) {
           ))}
         </div>
 
+        {/* 스캔 히스토리 */}
+        <HistorySection currentUrl={data.url} currentScanId={data.id} />
+
         {/* 다시 스캔 */}
         <div className="mt-8 text-center">
           <button
@@ -581,6 +584,9 @@ function MultiReportView({ data, raw }: { data: ScanData; raw: MultiRawResult })
           <OverallSummary pages={validPages} />
         )}
 
+        {/* 스캔 히스토리 */}
+        <HistorySection currentUrl={data.url} currentScanId={data.id} />
+
         {/* 다시 스캔 */}
         <div className="mt-8 text-center">
           <button
@@ -764,7 +770,7 @@ function OverallSummary({ pages }: { pages: MultiPage[] }) {
 
 // ─── 이메일 구독 폼 ──────────────────────────────────────────────────────────
 
-function SubscribeForm({ siteUrl }: { siteUrl: string }) {
+function SubscribeForm({ siteUrl, isFirstScan }: { siteUrl: string; isFirstScan?: boolean }) {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "duplicate" | "error">("idle");
 
@@ -794,44 +800,218 @@ function SubscribeForm({ siteUrl }: { siteUrl: string }) {
 
   if (status === "success") {
     return (
-      <div className="mt-10 bg-blue-50 rounded-xl p-6 text-center">
-        <p className="text-sm font-medium text-blue-700">
-          신청 완료! 변화가 감지되면 알려드리겠습니다
+      <div className="mt-10 bg-blue-50 rounded-xl p-6 text-center ring-1 ring-blue-200">
+        <p className="text-base font-semibold text-blue-700">
+          ✓ 자동 모니터링이 시작되었습니다
+        </p>
+        <p className="mt-2 text-sm text-gray-600">
+          주 1회 자동으로 재스캔하고, 트래킹 상태에 변화가 생기면 이메일로 알려드립니다.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="mt-10 bg-blue-50 rounded-xl p-6 text-center">
-      <p className="text-sm font-semibold text-gray-800">
-        정기 모니터링 알림 받기
-      </p>
-      <p className="mt-1 text-sm text-gray-500">
-        사이트 트래킹 상태에 변화가 생기면 이메일로 알려드립니다
-      </p>
-      <form onSubmit={handleSubmit} className="mt-4 flex flex-col sm:flex-row gap-2 max-w-md mx-auto">
+    <div className="mt-10 bg-blue-50 rounded-xl p-6 ring-1 ring-blue-200">
+      <div className="text-center">
+        <p className="text-base font-semibold text-gray-900">
+          📧 이 사이트를 자동으로 감시하시겠습니까?
+        </p>
+        <p className="mt-2 text-sm text-gray-600 leading-relaxed">
+          주 1회 자동으로 재스캔하고, 트래킹 상태에 변화가 생기면
+          <br className="hidden sm:block" />
+          이메일로 알려드립니다. <span className="font-semibold text-blue-700">(무료)</span>
+        </p>
+      </div>
+
+      <form onSubmit={handleSubmit} className="mt-5 flex flex-col sm:flex-row gap-2 max-w-md mx-auto">
         <input
           type="email"
           placeholder="이메일 주소"
           value={email}
           onChange={(e) => { setEmail(e.target.value); setStatus("idle"); }}
-          className="flex-1 h-10 px-3 rounded-lg border border-gray-300 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          className="flex-1 h-11 px-4 rounded-lg border border-gray-300 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
           required
         />
         <button
           type="submit"
           disabled={status === "loading"}
-          className="h-10 px-5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+          className="h-11 px-5 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {status === "loading" ? "신청 중..." : "알림 신청"}
+          {status === "loading" ? "신청 중..." : "무료 모니터링 시작"}
         </button>
       </form>
+
       {status === "duplicate" && (
-        <p className="mt-2 text-xs text-amber-600">이미 신청된 이메일입니다</p>
+        <p className="mt-3 text-xs text-amber-600 text-center">이미 신청된 이메일입니다</p>
       )}
       {status === "error" && (
-        <p className="mt-2 text-xs text-red-500">신청에 실패했습니다. 다시 시도해주세요</p>
+        <p className="mt-3 text-xs text-red-500 text-center">신청에 실패했습니다. 다시 시도해주세요</p>
+      )}
+
+      <ul className="mt-5 space-y-1.5 text-sm text-gray-700 max-w-md mx-auto">
+        <li className="flex gap-2">
+          <span className="text-blue-600">✓</span>
+          <span>트래킹이 갑자기 안 되기 시작했을 때 즉시 알림</span>
+        </li>
+        <li className="flex gap-2">
+          <span className="text-blue-600">✓</span>
+          <span>광고 성과가 떨어지는 원인을 놓치지 않음</span>
+        </li>
+        <li className="flex gap-2">
+          <span className="text-blue-600">✓</span>
+          <span>언제든 해지 가능</span>
+        </li>
+      </ul>
+
+      {isFirstScan && (
+        <p className="mt-4 text-xs text-gray-500 text-center italic leading-relaxed">
+          이 사이트는 처음 스캔되었습니다. 자동 모니터링을 신청하시면<br className="hidden sm:block" />
+          변화가 생길 때 알려드립니다.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ─── 스캔 히스토리 섹션 ──────────────────────────────────────────────────────
+
+interface HistoryEntry {
+  id: string;
+  url: string;
+  score: number;
+  scanned_at: string;
+  summary: Record<string, string>;
+}
+
+const HISTORY_TRACKER_PRIORITY = ["meta_pixel", "ga4", "naver", "kakao", "gtm"];
+const TRACKER_SHORT_NAME: Record<string, string> = {
+  meta_pixel: "Meta",
+  ga4: "GA4",
+  gtm: "GTM",
+  naver: "네이버",
+  kakao: "카카오",
+  tiktok: "TikTok",
+  criteo: "Criteo",
+  dable: "Dable",
+};
+
+function statusIcon(status: string): string {
+  if (!status || status === "not_installed") return "❌";
+  if (status === "duplicate" || status === "no_event" || status === "partial_events" || status === "missing_events") return "⚠️";
+  return "✅";
+}
+
+function relativeLabel(isoDate: string, now: Date): string {
+  const then = new Date(isoDate);
+  const diffMs = now.getTime() - then.getTime();
+  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays < 1) return "오늘";
+  if (diffDays === 1) return "1일 전";
+  if (diffDays < 30) return `${diffDays}일 전`;
+  const diffMonths = Math.round(diffDays / 30);
+  return `${diffMonths}개월 전`;
+}
+
+function HistorySection({ currentUrl, currentScanId }: { currentUrl: string; currentScanId: string }) {
+  const [entries, setEntries] = useState<HistoryEntry[] | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/history?url=${encodeURIComponent(currentUrl)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setEntries(d?.entries || []))
+      .catch(() => setEntries([]));
+  }, [currentUrl]);
+
+  if (entries === null) return null;
+  if (entries.length <= 1) return null;
+
+  const now = new Date();
+  const current = entries.find((e) => e.id === currentScanId) || entries[0];
+  const oldest = entries[entries.length - 1];
+  const scoreDelta = current.score - oldest.score;
+
+  const changedTrackers: { key: string; from: string; to: string }[] = [];
+  for (const key of Object.keys(current.summary || {})) {
+    const oldStatus = oldest.summary?.[key] || "not_installed";
+    const newStatus = current.summary[key];
+    if (oldStatus !== newStatus) {
+      changedTrackers.push({ key, from: oldStatus, to: newStatus });
+    }
+  }
+
+  const isImproved = (from: string, to: string): boolean => {
+    const rank = (s: string) => {
+      if (s === "ok") return 3;
+      if (s === "multi_container") return 3;
+      if (s === "partial_events" || s === "duplicate" || s === "no_event" || s === "missing_events") return 2;
+      return 1; // not_installed
+    };
+    return rank(to) > rank(from);
+  };
+
+  return (
+    <div className="mt-8 bg-white rounded-xl p-6 ring-1 ring-gray-100">
+      <p className="text-base font-semibold text-gray-900">📊 스캔 히스토리</p>
+
+      <div className="mt-4 space-y-2">
+        {entries.map((entry) => {
+          const isCurrent = entry.id === currentScanId;
+          const label = isCurrent ? "현재" : relativeLabel(entry.scanned_at, now);
+          const date = new Date(entry.scanned_at).toLocaleDateString("ko-KR");
+          return (
+            <div
+              key={entry.id}
+              className={`flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 rounded-lg text-sm ${
+                isCurrent ? "bg-blue-50 font-medium" : "bg-gray-50"
+              }`}
+            >
+              <span className={`text-xs ${isCurrent ? "text-blue-700 font-semibold" : "text-gray-500"}`}>
+                [{label}]
+              </span>
+              <span className="text-xs text-gray-500">{date}</span>
+              <span className="text-gray-900">
+                <strong>{entry.score}</strong>점
+              </span>
+              <span className="text-xs text-gray-600 ml-auto flex gap-2 flex-wrap">
+                {HISTORY_TRACKER_PRIORITY.map((k) => {
+                  const s = entry.summary?.[k];
+                  if (!s) return null;
+                  return (
+                    <span key={k}>
+                      {TRACKER_SHORT_NAME[k]} {statusIcon(s)}
+                    </span>
+                  );
+                })}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {(changedTrackers.length > 0 || scoreDelta !== 0) && (
+        <div className="mt-4 border-t border-gray-100 pt-4">
+          <p className="text-sm font-semibold text-gray-900">💡 변화 요약</p>
+          <ul className="mt-2 space-y-1 text-sm">
+            {changedTrackers.map(({ key, from, to }) => {
+              const improved = isImproved(from, to);
+              return (
+                <li
+                  key={key}
+                  className={improved ? "text-green-700" : "text-red-600"}
+                >
+                  {TRACKER_SHORT_NAME[key] || key}: {statusIcon(from)} → {statusIcon(to)}{" "}
+                  {improved ? "(개선됨)" : "(악화됨)"}
+                </li>
+              );
+            })}
+            {scoreDelta !== 0 && (
+              <li className={scoreDelta > 0 ? "text-green-700" : "text-red-600"}>
+                전체 점수: {oldest.score} → {current.score} ({scoreDelta > 0 ? "+" : ""}{scoreDelta}점)
+              </li>
+            )}
+          </ul>
+        </div>
       )}
     </div>
   );
