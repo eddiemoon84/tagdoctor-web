@@ -11,34 +11,49 @@ const SCAN_API_URL = process.env.SCAN_API_URL || 'http://localhost:3001';
 const MAX_CONCURRENT_SCANS = 3;
 let activeScans = 0;
 
+interface PageInput {
+  url: string;
+  type?: string;
+}
+
+const VALID_PAGE_TYPES = new Set(['home', 'product', 'cart', 'checkout', 'thankyou', 'custom']);
+
+function normalizeUrl(raw: string): string | null {
+  let url = raw.trim();
+  if (!url) return null;
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  try {
+    new URL(url);
+    return url;
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(request: Request) {
-  let body: { url?: string };
+  let body: { url?: string; pages?: PageInput[] };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: '잘못된 요청입니다' }, { status: 400 });
   }
 
-  let url = body.url?.trim();
+  // 멀티 스캔 경로
+  if (Array.isArray(body.pages) && body.pages.length > 0) {
+    return handleMultiScan(body.pages);
+  }
+
+  // 단일 스캔 경로 (하위 호환)
+  const url = normalizeUrl(body.url || '');
   if (!url) {
-    return NextResponse.json({ error: 'URL을 입력해주세요' }, { status: 400 });
-  }
-  if (!/^https?:\/\//i.test(url)) {
-    url = 'https://' + url;
-  }
-  try {
-    new URL(url);
-  } catch {
     return NextResponse.json({ error: '올바른 URL을 입력해주세요' }, { status: 400 });
   }
 
-  // SSRF 방어: private IP / 내부 네트워크 차단
   const validation = await validateScanUrl(url);
   if (!validation.valid) {
     return NextResponse.json({ error: validation.error }, { status: 400 });
   }
 
-  // 동시 스캔 제한
   if (activeScans >= MAX_CONCURRENT_SCANS) {
     return NextResponse.json(
       { error: '현재 서버가 바쁩니다. 잠시 후 다시 시도해주세요.' },
@@ -46,7 +61,6 @@ export async function POST(request: Request) {
     );
   }
 
-  // DB에 pending 레코드 생성
   const { data, error } = await supabase
     .from('scan_results')
     .insert({ url, status: 'pending' })
@@ -58,9 +72,58 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: '스캔 요청에 실패했습니다' }, { status: 500 });
   }
 
-  // 백그라운드에서 스캔 실행
   activeScans++;
   executeScan(data.id, url)
+    .catch(console.error)
+    .finally(() => { activeScans--; });
+
+  return NextResponse.json({ id: data.id });
+}
+
+async function handleMultiScan(pages: PageInput[]) {
+  if (pages.length > 5) {
+    return NextResponse.json({ error: '최대 5개 페이지까지 진단 가능합니다' }, { status: 400 });
+  }
+
+  const normalized: { url: string; type: string }[] = [];
+  for (const p of pages) {
+    const url = normalizeUrl(p.url || '');
+    if (!url) {
+      return NextResponse.json({ error: '올바른 URL을 입력해주세요' }, { status: 400 });
+    }
+    const type = VALID_PAGE_TYPES.has(p.type || '') ? (p.type as string) : 'custom';
+    normalized.push({ url, type });
+  }
+
+  // SSRF 방어: 모든 URL 검증
+  for (const { url } of normalized) {
+    const validation = await validateScanUrl(url);
+    if (!validation.valid) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
+    }
+  }
+
+  if (activeScans >= MAX_CONCURRENT_SCANS) {
+    return NextResponse.json(
+      { error: '현재 서버가 바쁩니다. 잠시 후 다시 시도해주세요.' },
+      { status: 503 },
+    );
+  }
+
+  const mainUrl = normalized[0].url;
+  const { data, error } = await supabase
+    .from('scan_results')
+    .insert({ url: mainUrl, status: 'pending' })
+    .select('id')
+    .single();
+
+  if (error) {
+    console.error('DB insert error:', error.message);
+    return NextResponse.json({ error: '스캔 요청에 실패했습니다' }, { status: 500 });
+  }
+
+  activeScans++;
+  executeMultiScan(data.id, normalized)
     .catch(console.error)
     .finally(() => { activeScans--; });
 
@@ -82,14 +145,32 @@ interface ScanTag {
   id: string | null;
   kakaoSdkOnly: boolean;
   status: string;
+  detectedEvents?: string[];
+  requiredEvents?: { required: string[]; detected: string[]; missing: string[] } | null;
 }
 
 interface ScanResult {
   url: string;
   scannedAt: string;
   score: number;
+  hosting?: { id: string; name: string };
   summary: { detectedCount: number; totalTags: number; errors: number; warnings: number };
   tags: Record<string, ScanTag>;
+}
+
+interface PageScanResult extends ScanResult {
+  type: string;
+  label?: string;
+  error?: string;
+}
+
+interface MultiScanResult {
+  url: string;
+  scannedAt: string;
+  hosting: { id: string; name: string };
+  overallScore: number;
+  pageCount: number;
+  pages: PageScanResult[];
 }
 
 async function executeScan(scanId: string, url: string) {
@@ -176,6 +257,67 @@ async function executeScan(scanId: string, url: string) {
   } catch (err) {
     const internal = err instanceof Error ? err.message : String(err);
     console.error(`Scan failed [${scanId}]:`, internal);
+    await supabase.from('scan_results').update({
+      status: 'failed',
+      error_message: '스캔 중 오류가 발생했습니다',
+    }).eq('id', scanId);
+  }
+}
+
+// ─── 멀티 페이지 스캔 실행 ───────────────────────────────────────────────────
+
+async function executeMultiScan(scanId: string, pages: { url: string; type: string }[]) {
+  await supabase.from('scan_results').update({ status: 'scanning' }).eq('id', scanId);
+
+  try {
+    // 페이지당 90s 타임아웃 + 여유
+    const timeoutMs = Math.min(90000 * pages.length + 30000, 480000);
+
+    const response = await fetch(`${SCAN_API_URL}/api/scan-multi`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pages }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+
+    if (!response.ok) {
+      const errBody = await response.json().catch(() => ({}));
+      throw new Error(errBody.error || `Scan server returned ${response.status}`);
+    }
+
+    const result: MultiScanResult = await response.json();
+
+    // 전체 요약: 모든 페이지의 태그 상태를 합침
+    const summary: Record<string, string> = {};
+    const validPages = result.pages.filter((p) => !p.error);
+    if (validPages.length > 0) {
+      for (const [key, tag] of Object.entries(validPages[0].tags)) {
+        summary[key] = tag.status;
+      }
+    }
+
+    // 전체 감지 매체 수: 유효한 페이지들 중 하나라도 detected인 트래커 카운트
+    const totalTags = Object.keys(validPages[0]?.tags || {}).length;
+    const installedTrackers = new Set<string>();
+    for (const pg of validPages) {
+      for (const [key, tag] of Object.entries(pg.tags)) {
+        if (tag.detected) installedTrackers.add(key);
+      }
+    }
+
+    await supabase.from('scan_results').update({
+      status: 'completed',
+      score: result.overallScore,
+      total_trackers: totalTags,
+      installed_trackers: installedTrackers.size,
+      summary,
+      raw_result: result,
+      scanned_at: result.scannedAt,
+    }).eq('id', scanId);
+
+  } catch (err) {
+    const internal = err instanceof Error ? err.message : String(err);
+    console.error(`Multi-scan failed [${scanId}]:`, internal);
     await supabase.from('scan_results').update({
       status: 'failed',
       error_message: '스캔 중 오류가 발생했습니다',

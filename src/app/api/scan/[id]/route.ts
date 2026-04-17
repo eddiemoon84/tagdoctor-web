@@ -14,10 +14,9 @@ export async function GET(
     return NextResponse.json({ error: 'Scan not found' }, { status: 404 });
   }
 
-  // raw_result 제외 — 내부 데이터 노출 방지
   const { data: scan, error } = await supabase
     .from('scan_results')
-    .select('id, url, status, score, total_trackers, installed_trackers, summary, error_message, scanned_at, created_at')
+    .select('id, url, status, score, total_trackers, installed_trackers, summary, raw_result, error_message, scanned_at, created_at')
     .eq('id', id)
     .single();
 
@@ -25,9 +24,12 @@ export async function GET(
     return NextResponse.json({ error: 'Scan not found' }, { status: 404 });
   }
 
-  // completed인 경우 tracker_diagnoses도 함께 조회
+  // 멀티 스캔 여부 — raw_result.pages 존재로 판단
+  const isMulti = Array.isArray(scan.raw_result?.pages);
+
+  // 단일 스캔만 tracker_diagnoses 조회 (멀티는 raw_result.pages에 내장)
   let diagnoses = null;
-  if (scan.status === 'completed') {
+  if (scan.status === 'completed' && !isMulti) {
     const { data } = await supabase
       .from('tracker_diagnoses')
       .select('*')
@@ -39,5 +41,6 @@ export async function GET(
   return NextResponse.json({
     ...scan,
     tracker_diagnoses: diagnoses || [],
+    is_multi: isMulti,
   });
 }

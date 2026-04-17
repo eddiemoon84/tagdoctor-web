@@ -47,39 +47,88 @@ const FAQS = [
   },
 ];
 
+const PAGE_TYPE_OPTIONS = [
+  { id: "product", label: "📦 상품 상세 페이지", placeholder: "예시 상품 페이지 URL을 입력하세요" },
+  { id: "cart", label: "🛒 장바구니 페이지", placeholder: "장바구니 페이지 URL" },
+  { id: "checkout", label: "💳 결제 페이지", placeholder: "결제 페이지 URL" },
+  { id: "thankyou", label: "✅ 결제 완료 페이지", placeholder: "결제 완료 페이지 URL" },
+] as const;
+
+type PageTypeId = (typeof PAGE_TYPE_OPTIONS)[number]["id"];
+
+interface ExtraPage {
+  type: PageTypeId;
+  url: string;
+}
+
 export default function Home() {
-  const [url, setUrl] = useState("");
+  const [mainUrl, setMainUrl] = useState("");
+  const [extraPages, setExtraPages] = useState<ExtraPage[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+  const availableTypes = PAGE_TYPE_OPTIONS.filter(
+    (opt) => !extraPages.some((p) => p.type === opt.id),
+  );
+
+  const addPage = (type: PageTypeId) => {
+    setExtraPages((prev) => [...prev, { type, url: "" }]);
+  };
+
+  const updatePage = (index: number, url: string) => {
+    setExtraPages((prev) => prev.map((p, i) => (i === index ? { ...p, url } : p)));
+  };
+
+  const removePage = (index: number) => {
+    setExtraPages((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const normalizeUrl = (raw: string): string | null => {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+    let url = trimmed;
+    if (!/^https?:\/\//i.test(url)) url = "https://" + url;
+    try {
+      new URL(url);
+      return url;
+    } catch {
+      return null;
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
 
-    const trimmed = url.trim();
-    if (!trimmed) {
-      setError("URL을 입력해주세요");
+    const main = normalizeUrl(mainUrl);
+    if (!main) {
+      setError("메인 페이지 URL을 올바르게 입력해주세요");
       return;
-    }
-    let finalUrl = trimmed;
-    if (!/^https?:\/\//i.test(finalUrl)) {
-      finalUrl = "https://" + finalUrl;
     }
 
-    try {
-      new URL(finalUrl);
-    } catch {
-      setError("올바른 URL을 입력해주세요 (예: www.example.com)");
-      return;
+    const filledExtras = extraPages.filter((p) => p.url.trim());
+    const normalizedExtras: { url: string; type: string }[] = [];
+    for (const p of filledExtras) {
+      const url = normalizeUrl(p.url);
+      if (!url) {
+        setError(`${PAGE_TYPE_OPTIONS.find((o) => o.id === p.type)?.label} URL을 확인해주세요`);
+        return;
+      }
+      normalizedExtras.push({ url, type: p.type });
     }
 
     setLoading(true);
     try {
+      const isMulti = normalizedExtras.length > 0;
+      const payload = isMulti
+        ? { pages: [{ url: main, type: "home" }, ...normalizedExtras] }
+        : { url: main };
+
       const res = await fetch("/api/scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: finalUrl }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
 
@@ -112,28 +161,84 @@ export default function Home() {
             1분 안에 진단합니다
           </p>
 
-          <form onSubmit={handleSubmit} className="mt-8 flex flex-col sm:flex-row gap-3 max-w-lg mx-auto">
+          <form onSubmit={handleSubmit} className="mt-8 max-w-lg mx-auto text-left">
+            <label className="block text-sm font-semibold text-gray-700">
+              메인 페이지 URL <span className="text-red-500">*</span>
+            </label>
             <input
               type="text"
-              value={url}
+              value={mainUrl}
               onChange={(e) => {
-                setUrl(e.target.value);
+                setMainUrl(e.target.value);
                 if (error) setError("");
               }}
               placeholder="www.example.com"
-              className="flex-1 h-12 px-4 rounded-lg border border-gray-300 text-base text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="mt-2 w-full h-12 px-4 rounded-lg border border-gray-300 text-base text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
+
+            {extraPages.length > 0 && (
+              <div className="mt-5 space-y-4">
+                {extraPages.map((page, idx) => {
+                  const opt = PAGE_TYPE_OPTIONS.find((o) => o.id === page.type);
+                  return (
+                    <div key={page.type}>
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium text-gray-700">
+                          {opt?.label}
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => removePage(idx)}
+                          className="text-xs text-gray-400 hover:text-red-500 cursor-pointer"
+                        >
+                          제거
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        value={page.url}
+                        onChange={(e) => {
+                          updatePage(idx, e.target.value);
+                          if (error) setError("");
+                        }}
+                        placeholder={opt?.placeholder}
+                        className="mt-1.5 w-full h-11 px-4 rounded-lg border border-gray-300 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {availableTypes.length > 0 && extraPages.length < 4 && (
+              <div className="mt-4">
+                <p className="text-xs text-gray-500 mb-2">페이지 추가 (선택, 최대 4개)</p>
+                <div className="flex flex-wrap gap-2">
+                  {availableTypes.map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => addPage(opt.id)}
+                      className="px-3 py-1.5 text-sm bg-white border border-gray-300 rounded-lg text-gray-700 hover:border-blue-500 hover:text-blue-600 cursor-pointer"
+                    >
+                      + {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={loading}
-              className="h-12 px-6 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+              className="mt-6 w-full h-12 px-6 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 transition-colors cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? "요청 중..." : "무료 진단 시작"}
             </button>
+            {error && (
+              <p className="mt-3 text-sm text-red-500 text-center">{error}</p>
+            )}
           </form>
-          {error && (
-            <p className="mt-2 text-sm text-red-500">{error}</p>
-          )}
         </div>
       </section>
 

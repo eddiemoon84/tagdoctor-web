@@ -13,6 +13,8 @@ CREATE TABLE scan_results (
   summary JSONB NOT NULL DEFAULT '{}',
   raw_result JSONB NOT NULL DEFAULT '{}',
   error_message TEXT,
+  page_count INTEGER DEFAULT 1,
+  is_multi BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

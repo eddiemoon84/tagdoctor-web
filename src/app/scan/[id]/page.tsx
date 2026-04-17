@@ -15,6 +15,43 @@ interface TrackerDiagnosis {
   score: number;
 }
 
+interface RequiredEventsInfo {
+  required: string[];
+  detected: string[];
+  missing: string[];
+}
+
+interface MultiPageTag {
+  name: string;
+  detected: boolean;
+  scriptLoadCount: number;
+  eventFireCount: number;
+  hasEventFire: boolean;
+  isDuplicate: boolean;
+  isMultiContainer: boolean;
+  ids: string[];
+  id: string | null;
+  status: string;
+  detectedEvents?: string[];
+  requiredEvents?: RequiredEventsInfo | null;
+}
+
+interface MultiPage {
+  url: string;
+  type: string;
+  label?: string;
+  score: number;
+  tags: Record<string, MultiPageTag>;
+  error?: string;
+}
+
+interface MultiRawResult {
+  overallScore: number;
+  pages: MultiPage[];
+  hosting: { id: string; name: string };
+  pageCount: number;
+}
+
 interface ScanData {
   id: string;
   url: string;
@@ -25,6 +62,8 @@ interface ScanData {
   error_message: string | null;
   scanned_at: string;
   tracker_diagnoses: TrackerDiagnosis[];
+  is_multi?: boolean;
+  raw_result?: MultiRawResult | Record<string, unknown>;
 }
 
 export default function ScanPage() {
@@ -95,6 +134,10 @@ export default function ScanPage() {
         </div>
       </div>
     );
+  }
+
+  if (data.is_multi && data.raw_result && "pages" in data.raw_result) {
+    return <MultiReportView data={data} raw={data.raw_result as MultiRawResult} />;
   }
 
   return <ReportView data={data} />;
@@ -334,6 +377,264 @@ function TrackerCard({ diagnosis }: { diagnosis: TrackerDiagnosis }) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── 멀티페이지 리포트 ──────────────────────────────────────────────────────
+
+const PAGE_TYPE_LABELS: Record<string, string> = {
+  home: "🏠 메인 페이지",
+  product: "📦 상품 상세",
+  cart: "🛒 장바구니",
+  checkout: "💳 결제",
+  thankyou: "✅ 결제 완료",
+  custom: "📄 페이지",
+};
+
+function MultiReportView({ data, raw }: { data: ScanData; raw: MultiRawResult }) {
+  const router = useRouter();
+  const pages = raw.pages;
+  const validPages = pages.filter((p) => !p.error);
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="bg-white border-b border-gray-100">
+        <div className="max-w-3xl mx-auto px-4 py-4 flex items-center justify-between">
+          <button
+            onClick={() => router.push("/")}
+            className="text-sm text-gray-500 hover:text-gray-900 cursor-pointer"
+          >
+            ← TagDoctor
+          </button>
+          <span className="text-xs text-gray-400">
+            {new Date(data.scanned_at).toLocaleString("ko-KR")}
+          </span>
+        </div>
+      </div>
+
+      <div className="max-w-3xl mx-auto px-4 py-8">
+        {/* 전체 요약 */}
+        <div className="bg-white rounded-xl p-8 text-center">
+          <div className="flex items-center justify-center gap-2">
+            <p className="text-sm text-gray-500 break-all">{data.url}</p>
+            <span className="inline-block px-2 py-0.5 text-[10px] font-bold bg-blue-600 text-white rounded-full leading-none">
+              BETA
+            </span>
+          </div>
+
+          <div className="mt-6 inline-flex items-center justify-center w-28 h-28 rounded-full border-4 border-blue-100">
+            <div>
+              <p
+                className={`text-4xl font-bold ${
+                  raw.overallScore >= 90
+                    ? "text-green-600"
+                    : raw.overallScore >= 70
+                      ? "text-amber-500"
+                      : "text-red-500"
+                }`}
+              >
+                {raw.overallScore}
+              </p>
+              <p className="text-xs text-gray-400">/ 100</p>
+            </div>
+          </div>
+
+          <div className="mt-4 flex justify-center gap-6 text-sm text-gray-600">
+            <span>🏠 호스팅: <strong className="text-gray-900">{raw.hosting?.name || "일반"}</strong></span>
+            <span>📄 진단 페이지: <strong className="text-gray-900">{pages.length}</strong>개</span>
+          </div>
+        </div>
+
+        {/* 페이지별 카드 */}
+        <div className="mt-6 space-y-4">
+          {pages.map((page, idx) => (
+            <MultiPageCard key={idx} page={page} />
+          ))}
+        </div>
+
+        {/* 전체 요약 박스 */}
+        {validPages.length > 0 && (
+          <OverallSummary pages={validPages} />
+        )}
+
+        {/* 다시 스캔 */}
+        <div className="mt-8 text-center">
+          <button
+            onClick={() => router.push("/")}
+            className="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg hover:bg-blue-700 cursor-pointer"
+          >
+            다른 사이트 진단하기
+          </button>
+        </div>
+
+        {/* 이메일 구독 */}
+        <SubscribeForm siteUrl={data.url} />
+
+        {/* 베타 피드백 */}
+        <div className="mt-6 bg-gray-50 rounded-xl p-6 text-center">
+          <p className="text-sm font-medium text-gray-600">
+            TagDoctor는 현재 베타 서비스입니다.
+          </p>
+          <p className="mt-1 text-sm text-gray-500 leading-relaxed">
+            진단 결과가 실제와 다르거나 개선 의견이 있으시면
+            <br className="hidden sm:block" />
+            알려주세요. 더 정확한 서비스를 만드는 데 큰 도움이 됩니다.
+          </p>
+          <a
+            href="mailto:eddiemoon84@gmail.com"
+            className="mt-3 inline-block text-sm text-blue-600 hover:text-blue-800"
+          >
+            eddiemoon84@gmail.com
+          </a>
+        </div>
+
+        <footer className="mt-8 pb-4 text-center text-sm text-gray-400">
+          <p>TagDoctor — 광고 트래킹 진단 도구 | 문의: eddiemoon84@gmail.com</p>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+function MultiPageCard({ page }: { page: MultiPage }) {
+  const typeLabel = page.label || PAGE_TYPE_LABELS[page.type] || page.type;
+  const scoreColor =
+    page.score >= 90 ? "text-green-600" : page.score >= 70 ? "text-amber-500" : "text-red-500";
+  const scoreIcon = page.score >= 90 ? "" : page.score >= 70 ? " ⚠️" : " ❌";
+
+  if (page.error) {
+    return (
+      <div className="bg-white rounded-xl p-5 ring-1 ring-red-200">
+        <div className="flex items-center justify-between">
+          <p className="font-semibold text-gray-900">{typeLabel}</p>
+          <span className="text-xs text-red-500">❌ 스캔 실패</span>
+        </div>
+        <p className="mt-1 text-xs text-gray-400 break-all">{page.url}</p>
+        <p className="mt-2 text-xs text-red-500">{page.error}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-xl p-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="font-semibold text-gray-900">
+            {typeLabel}
+            <span className={`ml-2 text-sm ${scoreColor}`}>점수: {page.score}/100{scoreIcon}</span>
+          </p>
+          <p className="mt-1 text-xs text-gray-400 break-all">{page.url}</p>
+        </div>
+      </div>
+
+      <div className="mt-3 space-y-2">
+        {Object.entries(page.tags)
+          .filter(([, tag]) => tag.detected)
+          .map(([key, tag]) => (
+            <PageTrackerRow key={key} trackerKey={key} tag={tag} />
+          ))}
+      </div>
+    </div>
+  );
+}
+
+function PageTrackerRow({ trackerKey, tag }: { trackerKey: string; tag: MultiPageTag }) {
+  const emoji = TRACKER_EMOJI[trackerKey] || "📋";
+
+  let statusIcon = "✅";
+  let statusBg = "bg-green-50";
+  if (tag.status === "missing_events" || tag.isDuplicate) {
+    statusIcon = "❌";
+    statusBg = "bg-red-50";
+  } else if (tag.status === "partial_events") {
+    statusIcon = "⚠️";
+    statusBg = "bg-amber-50";
+  } else if (tag.isMultiContainer) {
+    statusIcon = "ℹ️";
+    statusBg = "bg-blue-50";
+  }
+
+  const req = tag.requiredEvents;
+  const hasRequirement = req && req.required.length > 0;
+
+  return (
+    <div className={`${statusBg} rounded-lg p-3 text-sm`}>
+      <div className="flex items-center gap-2">
+        <span>{statusIcon}</span>
+        <span>{emoji}</span>
+        <span className="font-medium text-gray-900">{tag.name}</span>
+        {hasRequirement && req.missing.length === 0 && (
+          <span className="text-xs text-gray-500">({req.required.join(", ")} 모두 ✓)</span>
+        )}
+      </div>
+      {hasRequirement && req.missing.length > 0 && (
+        <div className="mt-2 pl-6 text-xs text-gray-700 leading-relaxed">
+          <p>필수: {req.required.join(", ")}</p>
+          {req.detected.length > 0 && <p>감지: {req.detected.join(", ")}</p>}
+          <p className="text-red-600 font-medium">누락: {req.missing.join(", ")}</p>
+          <p className="mt-1 text-gray-600">
+            💡 {buildEventPrescription(trackerKey, req.missing)}
+          </p>
+        </div>
+      )}
+      {tag.isDuplicate && (
+        <p className="mt-1 pl-6 text-xs text-red-600">
+          중복 설치됨 (스크립트 {tag.scriptLoadCount}회 로드)
+        </p>
+      )}
+    </div>
+  );
+}
+
+function buildEventPrescription(trackerKey: string, missing: string[]): string {
+  if (trackerKey === "meta_pixel") {
+    return `해당 페이지에 ${missing.map((e) => `fbq('track', '${e}')`).join(", ")} 호출 추가 필요`;
+  }
+  if (trackerKey === "ga4") {
+    return `해당 페이지에 gtag('event', '${missing[0]}', {...}) 호출 추가 필요`;
+  }
+  if (trackerKey === "tiktok") {
+    return `해당 페이지에 ttq.track('${missing[0]}') 호출 추가 필요`;
+  }
+  return `누락 이벤트: ${missing.join(", ")}`;
+}
+
+function OverallSummary({ pages }: { pages: MultiPage[] }) {
+  const issues: string[] = [];
+  const perfectPages: string[] = [];
+
+  for (const page of pages) {
+    const typeLabel = PAGE_TYPE_LABELS[page.type] || page.type;
+    const missingByTracker: string[] = [];
+    for (const [, tag] of Object.entries(page.tags)) {
+      if (tag.requiredEvents && tag.requiredEvents.missing.length > 0) {
+        missingByTracker.push(`${tag.name}: ${tag.requiredEvents.missing.join(", ")} 누락`);
+      }
+    }
+    if (missingByTracker.length === 0 && page.score >= 90) {
+      perfectPages.push(typeLabel);
+    } else if (missingByTracker.length > 0) {
+      issues.push(`${typeLabel} — ${missingByTracker.join("; ")}`);
+    }
+  }
+
+  if (issues.length === 0) return null;
+
+  return (
+    <div className="mt-8 bg-amber-50 rounded-xl p-6">
+      <p className="text-sm font-semibold text-gray-900">💡 전체 요약</p>
+      <ul className="mt-3 space-y-2 text-sm text-gray-700 leading-relaxed">
+        {perfectPages.length > 0 && (
+          <li>✅ 완벽한 페이지: {perfectPages.join(", ")}</li>
+        )}
+        {issues.map((issue, i) => (
+          <li key={i}>⚠️ {issue}</li>
+        ))}
+      </ul>
+      <p className="mt-4 text-sm text-gray-700 leading-relaxed">
+        이대로면 해당 페이지에서 전환 데이터가 전송되지 않아 광고 최적화가 불가능합니다.
+      </p>
     </div>
   );
 }
