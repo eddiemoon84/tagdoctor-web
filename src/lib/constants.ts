@@ -73,6 +73,8 @@ export const STATUS_CONFIG = {
   duplicate: { label: '중복 설치', emoji: '⚠️', color: 'text-amber-600', bg: 'bg-amber-50' },
   multi_container: { label: '복수 컨테이너', emoji: 'ℹ️', color: 'text-blue-600', bg: 'bg-blue-50' },
   no_event: { label: '이벤트 미감지', emoji: '⚠️', color: 'text-amber-600', bg: 'bg-amber-50' },
+  partial_events: { label: '이벤트 일부 누락', emoji: '⚠️', color: 'text-amber-600', bg: 'bg-amber-50' },
+  missing_events: { label: '이벤트 전부 누락', emoji: '❌', color: 'text-red-600', bg: 'bg-red-50' },
   not_installed: { label: '미설치', emoji: '⬜', color: 'text-gray-400', bg: 'bg-gray-50' },
 } as const;
 

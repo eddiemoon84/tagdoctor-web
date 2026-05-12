@@ -26,7 +26,7 @@ CREATE TABLE tracker_diagnoses (
   scan_id UUID NOT NULL REFERENCES scan_results(id) ON DELETE CASCADE,
   tracker_key TEXT NOT NULL,
   tracker_name TEXT NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('ok', 'duplicate', 'multi_container', 'no_event', 'not_installed')),
+  status TEXT NOT NULL CHECK (status IN ('ok', 'duplicate', 'multi_container', 'no_event', 'not_installed', 'missing_events', 'partial_events')),
   script_count INTEGER NOT NULL DEFAULT 0,
   event_count INTEGER NOT NULL DEFAULT 0,
   ids TEXT[] DEFAULT '{}',

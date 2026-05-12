@@ -8,13 +8,23 @@ import {
   HOSTING_BADGE,
   HOSTING_LABEL,
   HOSTING_PRESCRIPTIONS,
+  PRESCRIPTIONS,
   type HostingPrescription,
 } from "@/lib/constants";
+
+type TrackerStatus =
+  | "ok"
+  | "duplicate"
+  | "multi_container"
+  | "no_event"
+  | "not_installed"
+  | "missing_events"
+  | "partial_events";
 
 interface TrackerDiagnosis {
   tracker_key: string;
   tracker_name: string;
-  status: "ok" | "duplicate" | "multi_container" | "no_event" | "not_installed";
+  status: TrackerStatus;
   script_count: number;
   event_count: number;
   ids: string[];
@@ -354,7 +364,8 @@ function ReportView({ data }: { data: ScanData }) {
 
 function TrackerCard({ diagnosis, hostingId }: { diagnosis: TrackerDiagnosis; hostingId: string }) {
   const [open, setOpen] = useState(diagnosis.prescription !== null);
-  const config = STATUS_CONFIG[diagnosis.status];
+  // 미래에 새 status가 추가되어 STATUS_CONFIG에 라벨이 없을 때도 페이지가 깨지지 않게.
+  const config = STATUS_CONFIG[diagnosis.status] ?? STATUS_CONFIG.not_installed;
   const emoji = TRACKER_EMOJI[diagnosis.tracker_key] || "📋";
 
   // 구조화 처방 사용 가능 여부 (주요 매체 × not_installed)
@@ -572,6 +583,9 @@ function MultiReportView({ data, raw }: { data: ScanData; raw: MultiRawResult })
           })()}
         </div>
 
+        {/* 통합 트래커 진단 (사이트 전체 기준) */}
+        <UnifiedTrackerSummary pages={pages} hostingId={getHostingId(data)} />
+
         {/* 페이지별 카드 */}
         <div className="mt-6 space-y-4">
           {pages.map((page, idx) => (
@@ -768,6 +782,100 @@ function OverallSummary({ pages }: { pages: MultiPage[] }) {
   );
 }
 
+// ─── 멀티 스캔: 통합 트래커 요약 ────────────────────────────────────────────
+
+// 페이지들에 흩어진 같은 트래커의 status를 머지해서, 사이트 전체 기준의
+// 트래커별 진단 + 처방을 그릴 수 있는 TrackerDiagnosis 배열로 만든다.
+function aggregateUnifiedDiagnoses(pages: MultiPage[]): TrackerDiagnosis[] {
+  const validPages = pages.filter((p) => !p.error);
+  if (validPages.length === 0) return [];
+
+  const allKeys = new Set<string>();
+  for (const p of validPages) for (const k of Object.keys(p.tags)) allKeys.add(k);
+
+  const result: TrackerDiagnosis[] = [];
+  for (const key of allKeys) {
+    const tagsAcrossPages = validPages
+      .map((p) => p.tags[key])
+      .filter((t): t is MultiPageTag => Boolean(t));
+    if (tagsAcrossPages.length === 0) continue;
+
+    const detectedTags = tagsAcrossPages.filter((t) => t.detected);
+    const displayName = tagsAcrossPages[0].name;
+
+    if (detectedTags.length === 0) {
+      result.push({
+        tracker_key: key,
+        tracker_name: displayName,
+        status: "not_installed",
+        ids: [],
+        script_count: 0,
+        event_count: 0,
+        prescription: null,
+        score: 0,
+      });
+      continue;
+    }
+
+    const worstTag = detectedTags.reduce((worst, cur) =>
+      statusSeverity(cur.status) > statusSeverity(worst.status) ? cur : worst,
+    );
+    const allIds = Array.from(new Set(detectedTags.flatMap((t) => t.ids || [])));
+    const status = (worstTag.status || "ok") as TrackerStatus;
+
+    result.push({
+      tracker_key: key,
+      tracker_name: displayName,
+      status,
+      ids: allIds,
+      script_count: worstTag.scriptLoadCount,
+      event_count: worstTag.eventFireCount,
+      prescription: derivePrescription(key, status),
+      score: 0,
+    });
+  }
+
+  // 정렬: 문제 있는 트래커가 위로
+  result.sort((a, b) => statusSeverity(b.status) - statusSeverity(a.status));
+  return result;
+}
+
+// 클수록 worst. not_installed는 다른 경로로 그리니 의도적으로 최상위.
+function statusSeverity(s: string): number {
+  if (s === "not_installed") return 7;
+  if (s === "missing_events") return 6;
+  if (s === "duplicate") return 5;
+  if (s === "no_event") return 4;
+  if (s === "partial_events") return 3;
+  if (s === "multi_container") return 2;
+  return 1; // ok
+}
+
+function derivePrescription(key: string, status: TrackerStatus): string | null {
+  if (status === "duplicate") return PRESCRIPTIONS[key]?.duplicate ?? null;
+  if (status === "multi_container") return PRESCRIPTIONS[key]?.multi_container ?? null;
+  if (status === "no_event" || status === "missing_events" || status === "partial_events") {
+    return PRESCRIPTIONS[key]?.no_event ?? null;
+  }
+  return null;
+}
+
+function UnifiedTrackerSummary({ pages, hostingId }: { pages: MultiPage[]; hostingId: string }) {
+  const diagnoses = aggregateUnifiedDiagnoses(pages);
+  if (diagnoses.length === 0) return null;
+
+  return (
+    <div className="mt-8">
+      <p className="text-sm font-semibold text-gray-700 mb-3">📋 사이트 전체 트래커 진단</p>
+      <div className="space-y-3">
+        {diagnoses.map((d) => (
+          <TrackerCard key={d.tracker_key} diagnosis={d} hostingId={hostingId} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── 이메일 구독 폼 ──────────────────────────────────────────────────────────
 
 function SubscribeForm({ siteUrl, isFirstScan }: { siteUrl: string; isFirstScan?: boolean }) {
@@ -940,14 +1048,19 @@ function HistorySection({ currentUrl, currentScanId }: { currentUrl: string; cur
     }
   }
 
-  const isImproved = (from: string, to: string): boolean => {
-    const rank = (s: string) => {
-      if (s === "ok") return 3;
-      if (s === "multi_container") return 3;
-      if (s === "partial_events" || s === "duplicate" || s === "no_event" || s === "missing_events") return 2;
-      return 1; // not_installed
+  // statusIcon 과 같은 기준으로 등급화한다. 표시되는 아이콘이 같으면 라벨도
+  // 중립("변경됨")으로 — 아이콘이 동일한데 빨갛게 "악화됨"으로 찍히던 버그 방지.
+  const compareDirection = (from: string, to: string): "improved" | "regressed" | "changed" => {
+    const tier = (s: string) => {
+      if (!s || s === "not_installed") return 0;
+      if (s === "duplicate" || s === "no_event" || s === "partial_events" || s === "missing_events") return 1;
+      return 2; // ok, multi_container
     };
-    return rank(to) > rank(from);
+    const a = tier(from);
+    const b = tier(to);
+    if (b > a) return "improved";
+    if (b < a) return "regressed";
+    return "changed";
   };
 
   return (
@@ -994,14 +1107,22 @@ function HistorySection({ currentUrl, currentScanId }: { currentUrl: string; cur
           <p className="text-sm font-semibold text-gray-900">💡 변화 요약</p>
           <ul className="mt-2 space-y-1 text-sm">
             {changedTrackers.map(({ key, from, to }) => {
-              const improved = isImproved(from, to);
+              const direction = compareDirection(from, to);
+              const className =
+                direction === "improved"
+                  ? "text-green-700"
+                  : direction === "regressed"
+                    ? "text-red-600"
+                    : "text-gray-600";
+              const label =
+                direction === "improved"
+                  ? "(개선됨)"
+                  : direction === "regressed"
+                    ? "(악화됨)"
+                    : "(변경됨)";
               return (
-                <li
-                  key={key}
-                  className={improved ? "text-green-700" : "text-red-600"}
-                >
-                  {TRACKER_SHORT_NAME[key] || key}: {statusIcon(from)} → {statusIcon(to)}{" "}
-                  {improved ? "(개선됨)" : "(악화됨)"}
+                <li key={key} className={className}>
+                  {TRACKER_SHORT_NAME[key] || key}: {statusIcon(from)} → {statusIcon(to)} {label}
                 </li>
               );
             })}
