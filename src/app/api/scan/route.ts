@@ -4,6 +4,7 @@ import { PRESCRIPTIONS } from '@/lib/constants';
 import { validateScanUrl } from '@/lib/url-validator';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300;
 
 const SCAN_API_URL = process.env.SCAN_API_URL || 'http://localhost:3001';
 
@@ -182,7 +183,7 @@ async function executeScan(scanId: string, url: string) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),
-      signal: AbortSignal.timeout(90000),
+      signal: AbortSignal.timeout(180000),
     });
 
     if (!response.ok) {
@@ -278,8 +279,8 @@ async function executeMultiScan(scanId: string, pages: { url: string; type: stri
   await supabase.from('scan_results').update({ status: 'scanning' }).eq('id', scanId);
 
   try {
-    // 페이지당 90s 타임아웃 + 여유
-    const timeoutMs = Math.min(90000 * pages.length + 30000, 480000);
+    // 페이지당 90s 타임아웃 + 콜드스타트 여유
+    const timeoutMs = Math.min(90000 * pages.length + 60000, 290000);
 
     const response = await fetch(`${SCAN_API_URL}/api/scan-multi`, {
       method: 'POST',
